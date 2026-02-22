@@ -29,8 +29,10 @@ const SCOPES = 'openid profile email accounting.transactions accounting.contacts
 
 // 确保数据目录存在
 function ensureDataDir() {
-    const dataDir = path.join(__dirname, 'data');
+    // 根据 TOKEN_FILE 的路径确定数据目录
+    const dataDir = path.dirname(TOKEN_FILE);
     if (!fs.existsSync(dataDir)) {
+        console.log('Creating data directory:', dataDir);
         fs.mkdirSync(dataDir, { recursive: true });
     }
 }
