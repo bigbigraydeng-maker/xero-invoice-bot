@@ -8,6 +8,7 @@ const path = require('path');
 const axios = require('axios');
 const logger = require('./utils/logger');
 const { handleXeroError } = require('./utils/error-handler');
+const { getBASPeriod, getPeriodDescription } = require('./utils/bas-period');
 
 // 配置
 // 根据环境选择 token 存储路径
@@ -606,10 +607,24 @@ async function getBASReport() {
             ? `${now.getFullYear()}-${String(organisation.FinancialYearEndMonth).padStart(2, '0')}-${String(organisation.FinancialYearEndDay).padStart(2, '0')}`
             : null;
 
-        // 获取本季度/月度发票数据
-        const startOfQuarter = new Date(now.getFullYear(), Math.floor(now.getMonth() / 3) * 3, 1);
-        const fromDate = startOfQuarter.toISOString().split('T')[0];
-        const toDate = now.toISOString().split('T')[0];
+        // ✅ 修正：获取上一个完整的申报周期（而不是"到今天"）
+        // 默认使用季度申报，可以从配置中读取
+        const basFrequency = process.env.BAS_FREQUENCY || 'quarterly'; // monthly 或 quarterly
+        const period = getBASPeriod({
+            frequency: basFrequency,
+            country: isAustralia ? 'AU' : (isNewZealand ? 'NZ' : 'AU'),
+            now: now
+        });
+        
+        const fromDate = period.startDate;
+        const toDate = period.endDate;
+        
+        logger.info('BAS period calculated', { 
+            from: fromDate, 
+            to: toDate, 
+            type: period.periodType,
+            name: period.periodName 
+        });
 
         // 获取销售发票（含 GST）
         const salesResponse = await axios.get(`${XERO_API_BASE}/Invoices`, {
@@ -640,42 +655,63 @@ async function getBASReport() {
         const salesInvoices = salesResponse.data.Invoices || [];
         const purchaseBills = billsResponse.data.Invoices || [];
 
-        // 计算 GST
+        // 计算 GST - 区分应税和免税
         let totalSales = 0;
+        let taxableSales = 0;      // 应税销售额
+        let gstFreeSales = 0;      // 免税销售额
         let totalGSTCollected = 0;
         let gstSalesCount = 0;
+        let gstFreeSalesCount = 0;
 
         salesInvoices.forEach(inv => {
             if (inv.Status === 'AUTHORISED' || inv.Status === 'PAID') {
                 const subTotal = inv.SubTotal || 0;
                 const totalTax = inv.TotalTax || 0;
                 totalSales += subTotal;
-                totalGSTCollected += totalTax;
-                if (totalTax > 0) gstSalesCount++;
+                
+                if (totalTax > 0) {
+                    // 应税销售
+                    taxableSales += subTotal;
+                    totalGSTCollected += totalTax;
+                    gstSalesCount++;
+                } else {
+                    // 免税销售 (GST-free)
+                    gstFreeSales += subTotal;
+                    gstFreeSalesCount++;
+                }
             }
         });
 
         let totalPurchases = 0;
+        let taxablePurchases = 0;  // 应税采购
+        let gstFreePurchases = 0;  // 免税采购
         let totalGSTCredits = 0;
         let gstPurchaseCount = 0;
+        let gstFreePurchaseCount = 0;
 
         purchaseBills.forEach(inv => {
             if (inv.Status === 'AUTHORISED' || inv.Status === 'PAID') {
                 const subTotal = inv.SubTotal || 0;
                 const totalTax = inv.TotalTax || 0;
                 totalPurchases += subTotal;
-                totalGSTCredits += totalTax;
-                if (totalTax > 0) gstPurchaseCount++;
+                
+                if (totalTax > 0) {
+                    // 应税采购（可抵扣）
+                    taxablePurchases += subTotal;
+                    totalGSTCredits += totalTax;
+                    gstPurchaseCount++;
+                } else {
+                    // 免税采购
+                    gstFreePurchases += subTotal;
+                    gstFreePurchaseCount++;
+                }
             }
         });
 
         const netGST = totalGSTCollected - totalGSTCredits;
 
-        // 计算 BAS/GST 截止日期
-        const currentQuarter = Math.floor(now.getMonth() / 3) + 1;
-        const dueMonth = (Math.floor(now.getMonth() / 3) + 1) * 3 + 1; // 下个月的28号
-        const dueDate = new Date(now.getFullYear(), dueMonth - 1, 28);
-        const daysUntilDue = Math.ceil((dueDate - now) / (1000 * 60 * 60 * 24));
+        // ✅ 使用新的截止日期计算（基于完整周期）
+        const deadline = period.deadline;
 
         // 构建中文解读报告
         const report = {
@@ -684,39 +720,56 @@ async function getBASReport() {
             currency: organisation?.BaseCurrency || (isAustralia ? 'AUD' : 'NZD'),
             gst_rate: isAustralia ? '10%' : (isNewZealand ? '15%' : 'Unknown'),
             period: {
-                from: fromDate,
-                to: toDate,
-                quarter: currentQuarter,
-                year: now.getFullYear()
+                start_date: fromDate,
+                end_date: toDate,
+                type: period.periodType,  // monthly 或 quarterly
+                name: period.periodName,   // 例如 "Q1 (Jan-Mar) 2026"
+                quarter: period.quarter,
+                year: period.year,
+                due_date: deadline.dueDate,
+                days_until_due: deadline.daysRemaining,
+                is_urgent: deadline.isUrgent,
+                is_overdue: deadline.isOverdue
             },
             sales: {
                 total_amount: totalSales.toFixed(2),
+                taxable_amount: taxableSales.toFixed(2),
+                gst_free_amount: gstFreeSales.toFixed(2),
                 gst_collected: totalGSTCollected.toFixed(2),
-                invoice_count: gstSalesCount
+                invoice_count: gstSalesCount + gstFreeSalesCount,
+                taxable_invoice_count: gstSalesCount,
+                gst_free_invoice_count: gstFreeSalesCount
             },
             purchases: {
                 total_amount: totalPurchases.toFixed(2),
+                taxable_amount: taxablePurchases.toFixed(2),
+                gst_free_amount: gstFreePurchases.toFixed(2),
                 gst_credits: totalGSTCredits.toFixed(2),
-                bill_count: gstPurchaseCount
+                bill_count: gstPurchaseCount + gstFreePurchaseCount,
+                taxable_bill_count: gstPurchaseCount,
+                gst_free_bill_count: gstFreePurchaseCount
             },
             gst_summary: {
                 gst_collected: totalGSTCollected.toFixed(2),
                 gst_credits: totalGSTCredits.toFixed(2),
                 net_gst_payable: netGST.toFixed(2),
-                is_refund: netGST < 0
-            },
-            deadline: {
-                due_date: dueDate.toISOString().split('T')[0],
-                days_remaining: daysUntilDue,
-                is_urgent: daysUntilDue <= 7
+                is_refund: netGST < 0,
+                taxable_sales: taxableSales.toFixed(2),
+                gst_free_sales: gstFreeSales.toFixed(2)
             },
             // 中文解读
             interpretation: {
                 title: isAustralia ? 'BAS 税务报告' : 'GST Return 报告',
-                summary: `本${isAustralia ? '季度' : '期'}应缴${isAustralia ? 'BAS' : 'GST'} $${Math.abs(netGST).toFixed(2)}`,
+                period_description: getPeriodDescription(period),
+                summary: `${period.periodName} 应缴${isAustralia ? 'BAS' : 'GST'} $${Math.abs(netGST).toFixed(2)}`,
                 explanation: netGST > 0 
                     ? `您需要向${isAustralia ? 'ATO' : 'IRD'}缴纳 $${netGST.toFixed(2)} 的税款`
                     : `您可以向${isAustralia ? 'ATO' : 'IRD'}申请退还 $${Math.abs(netGST).toFixed(2)}`,
+                deadline_notice: deadline.isOverdue 
+                    ? `⚠️ 已逾期 ${Math.abs(deadline.daysRemaining)} 天，请尽快申报！`
+                    : deadline.isUrgent 
+                        ? `⏰ 距离申报截止仅剩 ${deadline.daysRemaining} 天！`
+                        : `📅 申报截止日：${deadline.dueDate}（还有 ${deadline.daysRemaining} 天）`,
                 advice: generateGSTAdvice(totalSales, totalPurchases, netGST, isAustralia)
             }
         };
@@ -724,14 +777,8 @@ async function getBASReport() {
         return report;
 
     } catch (error) {
-        console.error('获取 BAS/GST 报告失败:', error.message);
-        if (error.response) {
-            console.error('API 错误状态:', error.response.status);
-            console.error('API 错误详情:', error.response.data);
-            console.error('请求URL:', error.config?.url);
-            console.error('请求方法:', error.config?.method);
-        }
-        throw error;
+        logger.error('Failed to get BAS/GST report', error);
+        throw handleXeroError(error);
     }
 }
 
