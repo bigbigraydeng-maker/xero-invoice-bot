@@ -8,9 +8,12 @@ const path = require('path');
 const axios = require('axios');
 
 // 配置
-// Token 存储路径 - 使用项目目录下的 data 文件夹
-// 这样在任何环境都能正常工作
-const TOKEN_FILE = path.join(__dirname, 'data', 'tokens.json');
+// 根据环境选择 token 存储路径
+// Render disk 挂载在 /data
+// 本地开发使用 ./data
+const TOKEN_FILE = process.env.RENDER_DISK_PATH 
+    ? path.join(process.env.RENDER_DISK_PATH, 'tokens.json')
+    : path.join(__dirname, 'data', 'tokens.json');
 const XERO_CLIENT_ID = process.env.XERO_CLIENT_ID;
 const XERO_CLIENT_SECRET = process.env.XERO_CLIENT_SECRET;
 const REDIRECT_URI = process.env.XERO_REDIRECT_URI || 'https://xero-invoice-bot.onrender.com/callback';
