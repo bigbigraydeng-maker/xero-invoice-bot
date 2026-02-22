@@ -1,0 +1,5 @@
+# 这个文件是为了兼容 Render 的 Python 构建检测
+# 实际服务是 Node.js 运行的
+# 请看 package.json 和 server.js
+
+# 空的依赖列表，因为实际使用 Node.js
