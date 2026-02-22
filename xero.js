@@ -159,6 +159,14 @@ function getAuthUrl() {
  */
 async function handleCallback(code) {
     try {
+        // 调试信息
+        console.log('Xero token request:', {
+            client_id: XERO_CLIENT_ID,
+            client_secret: XERO_CLIENT_SECRET ? 'present (length: ' + XERO_CLIENT_SECRET.length + ')' : 'missing',
+            redirect_uri: REDIRECT_URI,
+            code: code.substring(0, 10) + '...'
+        });
+
         // 使用 URLSearchParams 构建 form-urlencoded 数据
         const params = new URLSearchParams();
         params.append('grant_type', 'authorization_code');
@@ -166,6 +174,8 @@ async function handleCallback(code) {
         params.append('redirect_uri', REDIRECT_URI);
         params.append('client_id', XERO_CLIENT_ID);
         params.append('client_secret', XERO_CLIENT_SECRET);
+
+        console.log('Request body:', params.toString().replace(XERO_CLIENT_SECRET, '***'));
 
         const response = await axios.post(XERO_TOKEN_URL, params.toString(), {
             headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
