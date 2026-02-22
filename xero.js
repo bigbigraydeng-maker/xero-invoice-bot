@@ -54,7 +54,53 @@ function loadTokens() {
  */
 function saveTokens(tokens) {
     ensureDataDir();
-    fs.writeFileSync(TOKEN_FILE, JSON.stringify(tokens, null, 2));
+    // 添加保存时间戳
+    const tokensWithTimestamp = {
+        ...tokens,
+        saved_at: new Date().toISOString()
+    };
+    fs.writeFileSync(TOKEN_FILE, JSON.stringify(tokensWithTimestamp, null, 2));
+}
+
+/**
+ * 检查 token 是否需要重新授权
+ * Xero refresh token 60 天过期
+ */
+function checkTokenStatus() {
+    const tokens = loadTokens();
+    if (!tokens.saved_at) {
+        return { valid: false, reason: 'no_timestamp', message: 'Token 无时间戳，建议重新授权' };
+    }
+    
+    const savedAt = new Date(tokens.saved_at);
+    const now = new Date();
+    const daysSinceSaved = (now - savedAt) / (1000 * 60 * 60 * 24);
+    
+    // Xero refresh token 60 天过期，提前 7 天提醒
+    const daysUntilExpiry = 60 - daysSinceSaved;
+    
+    if (daysUntilExpiry <= 0) {
+        return { 
+            valid: false, 
+            reason: 'refresh_token_expired', 
+            message: 'Refresh token 已过期（超过60天），需要重新授权',
+            days_since_saved: Math.floor(daysSinceSaved)
+        };
+    } else if (daysUntilExpiry <= 7) {
+        return { 
+            valid: true, 
+            reason: 'expiring_soon', 
+            message: `Refresh token 即将过期（${Math.floor(daysUntilExpiry)}天后），建议重新授权`,
+            days_until_expiry: Math.floor(daysUntilExpiry)
+        };
+    }
+    
+    return { 
+        valid: true, 
+        reason: 'ok', 
+        message: 'Token 状态正常',
+        days_until_expiry: Math.floor(daysUntilExpiry)
+    };
 }
 
 /**
@@ -480,15 +526,22 @@ async function getCustomerInvoices(customerName) {
  */
 async function healthCheck() {
     try {
+        // 先检查 token 状态
+        const tokenStatus = checkTokenStatus();
+        
         const accessToken = await getValidToken();
         if (!accessToken) {
-            return { status: 'not_authenticated' };
+            return { 
+                status: 'not_authenticated',
+                token_status: tokenStatus
+            };
         }
 
         const tenantId = await getTenantId(accessToken);
         return {
             status: 'authenticated',
-            tenant_id: tenantId
+            tenant_id: tenantId,
+            token_status: tokenStatus
         };
     } catch (error) {
         return { status: 'error', message: error.message };
@@ -920,5 +973,6 @@ module.exports = {
     getCustomerInvoices,
     healthCheck,
     getBASReport,
-    getCashflowForecast
+    getCashflowForecast,
+    checkTokenStatus
 };
