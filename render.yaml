@@ -1,0 +1,21 @@
+services:
+  - type: web
+    name: openclaw-feishu-bridge
+    runtime: node
+    buildCommand: npm install
+    startCommand: node server.js
+    disk:
+      name: bizmate-data
+      mountPath: /data
+      sizeGB: 1
+    envVars:
+      - key: FEISHU_APP_ID
+        value: cli_a9139fddafb89bb5
+      - key: FEISHU_APP_SECRET
+        value: BaChzUHA3iAPfddnIJ4T1eqvPqCMySPR
+      - key: MOONSHOT_API_KEY
+        value: sk-9ELqQcQuflGPjhVZYt8mAiQPf6KXvjjO2wdmzcTTyBdsEFp1
+      - key: PORT
+        value: 10000
+      - key: RENDER_DISK_PATH
+        value: /data
