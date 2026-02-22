@@ -224,6 +224,13 @@ async function executeToolCall(toolCall) {
         }
     } catch (error) {
         console.error(`工具执行失败 ${name}:`, error.message);
+        if (error.response) {
+            console.error('错误状态码:', error.response.status);
+            console.error('错误详情:', error.response.data);
+            if (error.response.status === 401) {
+                return { error: 'Xero 未授权或 token 已过期，请重新授权' };
+            }
+        }
         return { error: error.message };
     }
 }
