@@ -596,7 +596,31 @@ app.get('/xero/auth', (req, res) => {
 
 app.get('/xero/callback', async (req, res) => {
     const code = req.query.code;
-    if (!code) return res.status(400).json({ error: 'No code' });
+    const error = req.query.error;
+    const errorDescription = req.query.error_description;
+    
+    // 记录完整的查询参数，用于调试
+    console.log('Xero callback received:', {
+        query: req.query,
+        code: code ? 'present' : 'missing',
+        error: error,
+        errorDescription: errorDescription
+    });
+    
+    if (error) {
+        return res.status(400).json({ 
+            error: 'Xero authorization failed',
+            xero_error: error,
+            description: errorDescription 
+        });
+    }
+    
+    if (!code) {
+        return res.status(400).json({ 
+            error: 'No code received from Xero',
+            query_params: req.query 
+        });
+    }
 
     try {
         await xero.handleCallback(code);
