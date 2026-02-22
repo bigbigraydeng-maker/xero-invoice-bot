@@ -5,6 +5,7 @@ const axios = require('axios');
 const crypto = require('crypto');
 const xero = require('./xero');
 const ocr = require('./ocr-unified');
+const logger = require('./utils/logger');
 
 const app = express();
 
@@ -201,37 +202,72 @@ async function executeToolCall(toolCall) {
     const { name, arguments: argsStr } = toolCall.function;
     const args = JSON.parse(argsStr || '{}');
 
-    console.log(`执行工具: ${name}`, args);
+    logger.info(`Executing tool: ${name}`, { args });
 
     try {
+        let result;
         switch (name) {
             case 'get_customer_invoices':
-                return await xero.getCustomerInvoices(args.customer_name);
+                result = await xero.getCustomerInvoices(args.customer_name);
+                break;
             case 'get_receivables_summary':
-                return await xero.getReceivablesSummary();
+                result = await xero.getReceivablesSummary();
+                break;
             case 'get_all_invoices':
-                return await xero.getAllInvoices();
+                result = await xero.getAllInvoices();
+                break;
             case 'get_all_customers':
-                return await xero.getAllCustomers();
+                result = await xero.getAllCustomers();
+                break;
             case 'create_invoice':
-                return await xero.createInvoice(args);
+                result = await xero.createInvoice(args);
+                break;
             case 'get_bas_report':
-                return await xero.getBASReport();
+                result = await xero.getBASReport();
+                break;
             case 'get_cashflow_forecast':
-                return await xero.getCashflowForecast(args.days || 30);
+                result = await xero.getCashflowForecast(args.days || 30);
+                break;
             default:
-                return { error: `未知工具: ${name}` };
+                return { error: `Unknown tool: ${name}` };
         }
+        
+        logger.info(`Tool ${name} executed successfully`);
+        return result;
     } catch (error) {
-        console.error(`工具执行失败 ${name}:`, error.message);
-        if (error.response) {
-            console.error('错误状态码:', error.response.status);
-            console.error('错误详情:', error.response.data);
-            if (error.response.status === 401) {
-                return { error: 'Xero 未授权或 token 已过期，请重新授权' };
-            }
+        logger.error(`Tool execution failed: ${name}`, error);
+        
+        // 处理特定错误代码
+        if (error.message === 'XERO_NOT_AUTHENTICATED') {
+            return { 
+                error: '🔐 Xero 未连接',
+                message: '请访问 https://xero-invoice-bot-1.onrender.com/xero/auth 重新授权',
+                action_required: 'reauthorize'
+            };
         }
-        return { error: error.message };
+        
+        if (error.message === 'XERO_NO_TENANT') {
+            return {
+                error: '🏢 未找到 Xero 组织',
+                message: '请确保您的 Xero 账户已连接到应用',
+                action_required: 'check_connection'
+            };
+        }
+        
+        if (error.code === 'XERO_UNAUTHORIZED') {
+            return {
+                error: '🔐 Xero 授权已过期',
+                message: '请重新授权以继续使用',
+                action_required: 'reauthorize'
+            };
+        }
+        
+        // 通用错误
+        return { 
+            error: '❌ 操作失败',
+            message: error.message || '请稍后重试',
+            action_required: 'retry'
+        };
     }
 }
 

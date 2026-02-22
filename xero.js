@@ -6,6 +6,8 @@
 const fs = require('fs');
 const path = require('path');
 const axios = require('axios');
+const logger = require('./utils/logger');
+const { handleXeroError } = require('./utils/error-handler');
 
 // 配置
 // 根据环境选择 token 存储路径
@@ -33,7 +35,7 @@ function ensureDataDir() {
     // 根据 TOKEN_FILE 的路径确定数据目录
     const dataDir = path.dirname(TOKEN_FILE);
     if (!fs.existsSync(dataDir)) {
-        console.log('Creating data directory:', dataDir);
+        logger.info('Creating data directory', { path: dataDir });
         fs.mkdirSync(dataDir, { recursive: true });
     }
 }
@@ -61,6 +63,7 @@ function saveTokens(tokens) {
         saved_at: new Date().toISOString()
     };
     fs.writeFileSync(TOKEN_FILE, JSON.stringify(tokensWithTimestamp, null, 2));
+    logger.info('Tokens saved successfully');
 }
 
 /**
@@ -123,13 +126,16 @@ async function refreshAccessToken(refreshToken) {
         if (response.status === 200) {
             const tokens = response.data;
             saveTokens(tokens);
-            console.log('✅ Token 刷新成功');
+            logger.info('Token refreshed successfully');
             return tokens;
         }
     } catch (error) {
-        console.error('刷新 token 失败:', error.message);
+        logger.error('Failed to refresh token', error);
         if (error.response) {
-            console.error('错误详情:', error.response.data);
+            logger.error('Token refresh error details', null, { 
+                status: error.response.status,
+                data: error.response.data 
+            });
         }
     }
     return null;
@@ -142,6 +148,7 @@ async function getValidToken() {
     const tokens = loadTokens();
 
     if (!tokens || Object.keys(tokens).length === 0) {
+        logger.warn('No tokens found');
         return null;
     }
 
@@ -152,25 +159,29 @@ async function getValidToken() {
         // 测试 token 是否有效
         try {
             const response = await axios.get(XERO_CONNECTIONS_URL, {
-                headers: { 'Authorization': `Bearer ${accessToken}` }
+                headers: { 'Authorization': `Bearer ${accessToken}` },
+                timeout: 10000 // 10秒超时
             });
 
             if (response.status === 200) {
+                logger.debug('Access token is valid');
                 return accessToken;
             }
         } catch (error) {
-            console.log('Token 测试失败，尝试刷新...');
+            logger.info('Access token expired or invalid, trying to refresh...');
         }
     }
 
     // Token 过期或无效，尝试刷新
     if (refreshToken) {
+        logger.info('Refreshing access token...');
         const newTokens = await refreshAccessToken(refreshToken);
         if (newTokens) {
             return newTokens.access_token;
         }
     }
 
+    logger.error('Failed to get valid token');
     return null;
 }
 
@@ -249,14 +260,18 @@ async function handleCallback(code) {
  * 获取应收账款汇总
  */
 async function getReceivablesSummary() {
+    logger.info('Getting receivables summary');
+    
     const accessToken = await getValidToken();
     if (!accessToken) {
-        throw new Error('Not authenticated');
+        logger.warn('Cannot get receivables: not authenticated');
+        throw new Error('XERO_NOT_AUTHENTICATED');
     }
 
     const tenantId = await getTenantId(accessToken);
     if (!tenantId) {
-        throw new Error('No tenant found');
+        logger.warn('Cannot get receivables: no tenant found');
+        throw new Error('XERO_NO_TENANT');
     }
 
     try {
@@ -266,7 +281,8 @@ async function getReceivablesSummary() {
                 'Xero-tenant-id': tenantId,
                 'Accept': 'application/json'
             },
-            params: { where: 'Type=="ACCREC" AND Status!="PAID"' }
+            params: { where: 'Type=="ACCREC" AND Status!="PAID"' },
+            timeout: 30000 // 30秒超时
         });
 
         if (response.status === 200) {
@@ -288,6 +304,11 @@ async function getReceivablesSummary() {
                 byCustomer[customer].count += 1;
             }
 
+            logger.info('Receivables summary retrieved', { 
+                total: totalReceivable, 
+                count: invoices.length 
+            });
+
             return {
                 total_receivable: totalReceivable,
                 invoice_count: invoices.length,
@@ -295,8 +316,8 @@ async function getReceivablesSummary() {
             };
         }
     } catch (error) {
-        console.error('获取应收账款失败:', error.message);
-        throw error;
+        logger.error('Failed to get receivables summary', error);
+        throw handleXeroError(error);
     }
 }
 
