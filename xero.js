@@ -25,7 +25,8 @@ const XERO_CONNECTIONS_URL = 'https://api.xero.com/connections';
 const XERO_API_BASE = 'https://api.xero.com/api.xro/2.0';
 
 // Scopes for Xero API
-const SCOPES = 'openid profile email accounting.transactions accounting.contacts offline_access';
+// 包含所有需要的权限：交易、联系人、报告、设置
+const SCOPES = 'openid profile email accounting.transactions accounting.contacts accounting.reports.read accounting.settings.read offline_access';
 
 // 确保数据目录存在
 function ensureDataDir() {
@@ -704,7 +705,10 @@ async function getBASReport() {
     } catch (error) {
         console.error('获取 BAS/GST 报告失败:', error.message);
         if (error.response) {
-            console.error('API 错误:', error.response.data);
+            console.error('API 错误状态:', error.response.status);
+            console.error('API 错误详情:', error.response.data);
+            console.error('请求URL:', error.config?.url);
+            console.error('请求方法:', error.config?.method);
         }
         throw error;
     }
