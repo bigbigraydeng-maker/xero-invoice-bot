@@ -3,7 +3,7 @@ require('dotenv').config();
 const express = require('express');
 const axios = require('axios');
 const crypto = require('crypto');
-const xero = require('./xero');
+const xero = require('./xero-multiuser');  // 使用多用户版本
 const ocr = require('./ocr-unified');
 const logger = require('./utils/logger');
 const db = require('./db');
@@ -686,15 +686,26 @@ function parseBody(req) {
 }
 
 // ===============================
-// Xero OAuth 路由
+// Xero OAuth 路由（多用户版本）
 // ===============================
 app.get('/xero/auth', (req, res) => {
-    const authUrl = xero.getAuthUrl();
+    // 获取用户ID（从查询参数或会话中）
+    const userId = req.query.user_id;
+    
+    if (!userId) {
+        return res.status(400).json({
+            error: 'Missing user_id',
+            message: '请提供 user_id 参数，格式: /xero/auth?user_id=feishu:xxx'
+        });
+    }
+    
+    const authUrl = xero.generateAuthUrl(userId);
     res.redirect(authUrl);
 });
 
 app.get('/xero/callback', async (req, res) => {
     const code = req.query.code;
+    const state = req.query.state;
     const error = req.query.error;
     const errorDescription = req.query.error_description;
     
@@ -702,6 +713,7 @@ app.get('/xero/callback', async (req, res) => {
     console.log('Xero callback received:', {
         query: req.query,
         code: code ? 'present' : 'missing',
+        state: state ? 'present' : 'missing',
         error: error,
         errorDescription: errorDescription
     });
@@ -714,15 +726,19 @@ app.get('/xero/callback', async (req, res) => {
         });
     }
     
-    if (!code) {
+    if (!code || !state) {
         return res.status(400).json({ 
-            error: 'No code received from Xero',
+            error: 'Missing code or state',
             query_params: req.query 
         });
     }
 
     try {
-        await xero.handleCallback(code);
+        const result = await xero.handleCallback(code, state);
+        
+        if (!result.success) {
+            throw new Error(result.error || 'Authorization failed');
+        }
         res.send(`
             <!DOCTYPE html>
             <html>
@@ -845,6 +861,92 @@ app.get('/health', async (req, res) => {
 });
 
 // ===============================
+// 用户管理 API（多用户支持）
+// ===============================
+
+// 获取所有用户列表
+app.get('/api/users', (req, res) => {
+    try {
+        const users = db.getAllUsers();
+        res.json({
+            success: true,
+            count: users.length,
+            users: users
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 获取特定用户信息
+app.get('/api/users/:userId', (req, res) => {
+    try {
+        const user = db.getUser(req.params.userId);
+        if (!user) {
+            return res.status(404).json({
+                success: false,
+                error: 'User not found'
+            });
+        }
+        
+        // 检查 Xero 连接状态
+        const xeroStatus = xero.isConnected(req.params.userId);
+        const xeroToken = db.getXeroToken(req.params.userId);
+        
+        res.json({
+            success: true,
+            user: user,
+            xero: {
+                connected: xeroStatus,
+                tenantName: xeroToken?.tenant_name || null,
+                lastUpdated: xeroToken?.updated_at || null
+            }
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 获取所有已连接 Xero 的用户
+app.get('/api/xero/users', (req, res) => {
+    try {
+        const users = db.getAllXeroUsers();
+        res.json({
+            success: true,
+            count: users.length,
+            users: users
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// 断开用户 Xero 连接
+app.post('/api/users/:userId/xero/disconnect', (req, res) => {
+    try {
+        xero.disconnect(req.params.userId);
+        res.json({
+            success: true,
+            message: 'Xero connection removed'
+        });
+    } catch (error) {
+        res.status(500).json({
+            success: false,
+            error: error.message
+        });
+    }
+});
+
+// ===============================
 // 主页
 // ===============================
 app.get('/', (req, res) => {
@@ -900,7 +1002,17 @@ app.post('/feishu-webhook', async (req, res) => {
             const chatId = event.message?.chat_id;
             const content = event.message?.content;
             const messageType = event.message?.message_type;
-            const userId = event.sender?.sender_id?.open_id || chatId;
+            const feishuUserId = event.sender?.sender_id?.open_id || chatId;
+            
+            // 创建或更新用户（多用户支持）
+            const userId = db.createOrUpdateUser('feishu', feishuUserId, {
+                name: event.sender?.sender_id?.union_id || null
+            });
+            
+            if (!userId) {
+                console.error('无法创建用户记录');
+                return res.json({ status: 'error', message: 'User creation failed' });
+            }
 
             // 防重复处理
             if (processedMessages.has(messageId)) {

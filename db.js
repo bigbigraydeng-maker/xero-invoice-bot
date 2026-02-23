@@ -91,6 +91,42 @@ function createTables() {
         ON pending_invoices(expires_at)
     `);
 
+    // 用户表（多用户支持）
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS users (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            user_id TEXT UNIQUE NOT NULL,
+            platform TEXT NOT NULL,
+            platform_user_id TEXT NOT NULL,
+            name TEXT,
+            email TEXT,
+            is_admin BOOLEAN DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        )
+    `);
+
+    // 创建用户索引
+    db.exec(`
+        CREATE INDEX IF NOT EXISTS idx_users_platform 
+        ON users(platform, platform_user_id)
+    `);
+
+    // Xero Token 表（每个用户独立的 Xero 授权）
+    db.exec(`
+        CREATE TABLE IF NOT EXISTS xero_tokens (
+            user_id TEXT PRIMARY KEY,
+            access_token TEXT NOT NULL,
+            refresh_token TEXT NOT NULL,
+            expires_at INTEGER NOT NULL,
+            tenant_id TEXT,
+            tenant_name TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            FOREIGN KEY (user_id) REFERENCES users(user_id)
+        )
+    `);
+
     logger.info('Database tables created');
 }
 
@@ -310,6 +346,178 @@ initDatabase();
 // 定期清理过期发票（每 10 分钟）
 setInterval(cleanupExpiredInvoices, 10 * 60 * 1000);
 
+// ==================== 用户管理函数 ====================
+
+/**
+ * 创建或更新用户
+ * @param {string} platform - 平台类型 (feishu/wechat)
+ * @param {string} platformUserId - 平台用户ID
+ * @param {object} userInfo - 用户信息
+ * @returns {string} 内部用户ID
+ */
+function createOrUpdateUser(platform, platformUserId, userInfo = {}) {
+    try {
+        // 生成内部用户ID
+        const userId = `${platform}:${platformUserId}`;
+        
+        const stmt = db.prepare(`
+            INSERT INTO users (user_id, platform, platform_user_id, name, email)
+            VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                name = COALESCE(excluded.name, name),
+                email = COALESCE(excluded.email, email),
+                updated_at = CURRENT_TIMESTAMP
+        `);
+        
+        stmt.run(
+            userId,
+            platform,
+            platformUserId,
+            userInfo.name || null,
+            userInfo.email || null
+        );
+        
+        logger.info('User created/updated', { userId, platform });
+        return userId;
+    } catch (error) {
+        logger.error('Failed to create/update user', { platform, platformUserId, error: error.message });
+        return null;
+    }
+}
+
+/**
+ * 获取用户信息
+ * @param {string} userId - 内部用户ID
+ * @returns {object|null} 用户信息
+ */
+function getUser(userId) {
+    try {
+        const stmt = db.prepare('SELECT * FROM users WHERE user_id = ?');
+        return stmt.get(userId);
+    } catch (error) {
+        logger.error('Failed to get user', { userId, error: error.message });
+        return null;
+    }
+}
+
+/**
+ * 通过平台用户ID获取用户
+ * @param {string} platform - 平台类型
+ * @param {string} platformUserId - 平台用户ID
+ * @returns {object|null} 用户信息
+ */
+function getUserByPlatform(platform, platformUserId) {
+    try {
+        const stmt = db.prepare('SELECT * FROM users WHERE platform = ? AND platform_user_id = ?');
+        return stmt.get(platform, platformUserId);
+    } catch (error) {
+        logger.error('Failed to get user by platform', { platform, platformUserId, error: error.message });
+        return null;
+    }
+}
+
+/**
+ * 获取所有用户列表
+ * @returns {Array} 用户列表
+ */
+function getAllUsers() {
+    try {
+        const stmt = db.prepare('SELECT * FROM users ORDER BY created_at DESC');
+        return stmt.all();
+    } catch (error) {
+        logger.error('Failed to get all users', error);
+        return [];
+    }
+}
+
+// ==================== Xero Token 管理函数 ====================
+
+/**
+ * 保存 Xero Token
+ * @param {string} userId - 内部用户ID
+ * @param {object} tokens - Token 信息
+ */
+function saveXeroToken(userId, tokens) {
+    try {
+        const stmt = db.prepare(`
+            INSERT INTO xero_tokens (user_id, access_token, refresh_token, expires_at, tenant_id, tenant_name)
+            VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(user_id) DO UPDATE SET
+                access_token = excluded.access_token,
+                refresh_token = excluded.refresh_token,
+                expires_at = excluded.expires_at,
+                tenant_id = COALESCE(excluded.tenant_id, tenant_id),
+                tenant_name = COALESCE(excluded.tenant_name, tenant_name),
+                updated_at = CURRENT_TIMESTAMP
+        `);
+        
+        stmt.run(
+            userId,
+            tokens.access_token,
+            tokens.refresh_token,
+            tokens.expires_at,
+            tokens.tenant_id || null,
+            tokens.tenant_name || null
+        );
+        
+        logger.info('Xero token saved', { userId });
+        return true;
+    } catch (error) {
+        logger.error('Failed to save Xero token', { userId, error: error.message });
+        return false;
+    }
+}
+
+/**
+ * 获取 Xero Token
+ * @param {string} userId - 内部用户ID
+ * @returns {object|null} Token 信息
+ */
+function getXeroToken(userId) {
+    try {
+        const stmt = db.prepare('SELECT * FROM xero_tokens WHERE user_id = ?');
+        return stmt.get(userId);
+    } catch (error) {
+        logger.error('Failed to get Xero token', { userId, error: error.message });
+        return null;
+    }
+}
+
+/**
+ * 删除 Xero Token（断开连接）
+ * @param {string} userId - 内部用户ID
+ */
+function deleteXeroToken(userId) {
+    try {
+        const stmt = db.prepare('DELETE FROM xero_tokens WHERE user_id = ?');
+        stmt.run(userId);
+        logger.info('Xero token deleted', { userId });
+        return true;
+    } catch (error) {
+        logger.error('Failed to delete Xero token', { userId, error: error.message });
+        return false;
+    }
+}
+
+/**
+ * 获取所有已连接 Xero 的用户
+ * @returns {Array} 用户列表
+ */
+function getAllXeroUsers() {
+    try {
+        const stmt = db.prepare(`
+            SELECT u.*, x.tenant_name, x.updated_at as xero_updated_at
+            FROM users u
+            JOIN xero_tokens x ON u.user_id = x.user_id
+            ORDER BY x.updated_at DESC
+        `);
+        return stmt.all();
+    } catch (error) {
+        logger.error('Failed to get all Xero users', error);
+        return [];
+    }
+}
+
 module.exports = {
     initDatabase,
     saveMessage,
@@ -319,5 +527,15 @@ module.exports = {
     getPendingInvoice,
     clearPendingInvoice,
     getStats,
-    closeDatabase
+    closeDatabase,
+    // 用户管理
+    createOrUpdateUser,
+    getUser,
+    getUserByPlatform,
+    getAllUsers,
+    // Xero Token 管理
+    saveXeroToken,
+    getXeroToken,
+    deleteXeroToken,
+    getAllXeroUsers
 };
