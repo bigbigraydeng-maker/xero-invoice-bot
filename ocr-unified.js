@@ -6,23 +6,25 @@
 
 const axios = require('axios');
 
-// OCR服务商配置
-const OCR_PROVIDERS = {
-    baidu: {
-        name: '百度OCR',
-        enabled: !!(process.env.BAIDU_OCR_API_KEY && process.env.BAIDU_OCR_SECRET_KEY),
-        priority: 1, // 优先级，数字越小越优先
-        timeout: 15000, // 15秒超时
-        retryCount: 2
-    },
-    google: {
-        name: 'Google Cloud Vision',
-        enabled: !!process.env.GOOGLE_VISION_API_KEY,
-        priority: 2,
-        timeout: 10000, // 10秒超时（Google通常更快）
-        retryCount: 2
-    }
-};
+// OCR服务商配置（函数形式，每次调用时重新检查环境变量）
+function getOCRProviders() {
+    return {
+        baidu: {
+            name: '百度OCR',
+            enabled: !!(process.env.BAIDU_OCR_API_KEY && process.env.BAIDU_OCR_SECRET_KEY),
+            priority: 1,
+            timeout: 15000,
+            retryCount: 2
+        },
+        google: {
+            name: 'Google Cloud Vision',
+            enabled: !!process.env.GOOGLE_VISION_API_KEY,
+            priority: 2,
+            timeout: 10000,
+            retryCount: 2
+        }
+    };
+}
 
 // 百度OCR Token管理
 const baiduToken = {
@@ -34,7 +36,8 @@ const baiduToken = {
  * 获取可用的OCR服务商列表（按优先级排序）
  */
 function getAvailableProviders() {
-    return Object.entries(OCR_PROVIDERS)
+    const providers = getOCRProviders();
+    return Object.entries(providers)
         .filter(([_, config]) => config.enabled)
         .sort((a, b) => a[1].priority - b[1].priority)
         .map(([name, _]) => name);
@@ -47,6 +50,7 @@ function getAvailableProviders() {
  */
 async function recognizeInvoice(imageBase64) {
     const providers = getAvailableProviders();
+    const providerConfigs = getOCRProviders();
     
     if (providers.length === 0) {
         throw new Error('没有可用的OCR服务商，请检查环境变量配置');
@@ -56,14 +60,14 @@ async function recognizeInvoice(imageBase64) {
     
     for (const provider of providers) {
         try {
-            console.log(`尝试使用 ${OCR_PROVIDERS[provider].name} 识别发票...`);
+            console.log(`尝试使用 ${providerConfigs[provider].name} 识别发票...`);
             const result = await recognizeWithProvider(provider, imageBase64);
-            console.log(`${OCR_PROVIDERS[provider].name} 识别成功`);
+            console.log(`${providerConfigs[provider].name} 识别成功`);
             return result;
         } catch (error) {
-            console.error(`${OCR_PROVIDERS[provider].name} 识别失败:`, error.message);
+            console.error(`${providerConfigs[provider].name} 识别失败:`, error.message);
             errors.push({
-                provider: OCR_PROVIDERS[provider].name,
+                provider: providerConfigs[provider].name,
                 error: error.message
             });
             
@@ -94,7 +98,8 @@ async function recognizeWithProvider(provider, imageBase64) {
  * 百度OCR识别
  */
 async function recognizeWithBaidu(imageBase64) {
-    const config = OCR_PROVIDERS.baidu;
+    const providers = getOCRProviders();
+    const config = providers.baidu;
     
     // 获取access token
     const accessToken = await getBaiduAccessToken();
@@ -162,6 +167,7 @@ async function getBaiduAccessToken() {
  */
 async function recognizeWithGoogle(imageBase64) {
     const apiKey = process.env.GOOGLE_VISION_API_KEY;
+    const providers = getOCRProviders();
     
     if (!apiKey) {
         throw new Error('Google Vision未配置');
@@ -187,7 +193,7 @@ async function recognizeWithGoogle(imageBase64) {
                 headers: {
                     'Content-Type': 'application/json'
                 },
-                timeout: OCR_PROVIDERS.google.timeout
+                timeout: providers.google.timeout
             }
         );
         
@@ -666,8 +672,9 @@ function convertToXeroInvoice(ocrResult, customerName) {
  * 获取OCR服务状态
  */
 function getOCRStatus() {
+    const providers = getOCRProviders();
     return {
-        providers: Object.entries(OCR_PROVIDERS).map(([name, config]) => ({
+        providers: Object.entries(providers).map(([name, config]) => ({
             name: config.name,
             enabled: config.enabled,
             priority: config.priority
