@@ -2,11 +2,14 @@
  * OCR 发票识别模块
  * 支持：百度OCR、腾讯OCR、阿里OCR
  * 默认使用百度OCR（免费额度高，识别效果好）
+ * 
+ * 注意：待确认发票存储已迁移到 db.js（SQLite 持久化）
  */
 
 const axios = require('axios');
 const fs = require('fs');
 const path = require('path');
+const db = require('./db');
 
 // OCR 配置
 const OCR_CONFIG = {
@@ -19,8 +22,7 @@ const OCR_CONFIG = {
     }
 };
 
-// 发票数据临时存储（等待用户确认）
-const pendingInvoices = new Map();
+// 注意：pendingInvoices 已迁移到 SQLite，通过 db.js 访问
 
 /**
  * 获取百度OCR access token
@@ -142,35 +144,26 @@ function formatInvoiceInfo(invoice) {
 
 /**
  * 存储待确认的发票
+ * 使用 SQLite 持久化存储（替代内存 Map）
  */
 function storePendingInvoice(userId, invoiceData) {
-    pendingInvoices.set(userId, {
-        data: invoiceData,
-        timestamp: Date.now()
-    });
-    
-    // 30分钟后自动清理
-    setTimeout(() => {
-        pendingInvoices.delete(userId);
-    }, 30 * 60 * 1000);
+    return db.storePendingInvoice(userId, invoiceData, 30);
 }
 
 /**
  * 获取待确认的发票
+ * 从 SQLite 数据库读取
  */
 function getPendingInvoice(userId) {
-    const pending = pendingInvoices.get(userId);
-    if (pending && Date.now() - pending.timestamp < 30 * 60 * 1000) {
-        return pending.data;
-    }
-    return null;
+    return db.getPendingInvoice(userId);
 }
 
 /**
  * 清除待确认的发票
+ * 从 SQLite 数据库删除
  */
 function clearPendingInvoice(userId) {
-    pendingInvoices.delete(userId);
+    return db.clearPendingInvoice(userId);
 }
 
 /**

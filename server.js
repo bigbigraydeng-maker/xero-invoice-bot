@@ -6,6 +6,7 @@ const crypto = require('crypto');
 const xero = require('./xero');
 const ocr = require('./ocr-unified');
 const logger = require('./utils/logger');
+const db = require('./db');
 
 const app = express();
 
@@ -193,22 +194,27 @@ const XERO_TOOLS = [
     }
 ];
 
-// 对话历史管理（内存 Map，按用户隔离）
-const conversationHistory = new Map();
+// 对话历史管理 - 使用 SQLite 持久化存储
 const MAX_HISTORY_LENGTH = 20;
 
+/**
+ * 获取对话历史（从数据库）
+ * @param {string} userId - 用户ID
+ * @returns {Array} 消息数组
+ */
 function getHistory(userId) {
-    return conversationHistory.get(userId) || [];
+    return db.getHistory(userId, MAX_HISTORY_LENGTH);
 }
 
+/**
+ * 保存对话历史（到数据库）
+ * @param {string} userId - 用户ID
+ * @param {string} userMsg - 用户消息
+ * @param {string} assistantMsg - 助手回复
+ */
 function saveHistory(userId, userMsg, assistantMsg) {
-    const history = getHistory(userId);
-    history.push({ role: 'user', content: userMsg });
-    history.push({ role: 'assistant', content: assistantMsg });
-    if (history.length > MAX_HISTORY_LENGTH) {
-        history.splice(0, history.length - MAX_HISTORY_LENGTH);
-    }
-    conversationHistory.set(userId, history);
+    db.saveMessage(userId, 'user', userMsg);
+    db.saveMessage(userId, 'assistant', assistantMsg);
 }
 
 // 工具执行器
@@ -827,11 +833,13 @@ app.get('/xero/invoice/:invoiceId/pdf', async (req, res) => {
 app.get('/health', async (req, res) => {
     const xeroStatus = await xero.healthCheck();
     const ocrStatus = ocr.getOCRStatus();
+    const dbStats = db.getStats();
     res.json({
         status: 'running',
         service: 'bizmate',
         xero: xeroStatus,
         ocr: ocrStatus,
+        database: dbStats,
         timestamp: new Date().toISOString()
     });
 });
