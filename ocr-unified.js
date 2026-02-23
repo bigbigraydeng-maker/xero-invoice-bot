@@ -673,14 +673,20 @@ function convertToXeroInvoice(ocrResult, customerName) {
  */
 function getOCRStatus() {
     const providers = getOCRProviders();
-    return {
+    const status = {
         providers: Object.entries(providers).map(([name, config]) => ({
             name: config.name,
             enabled: config.enabled,
             priority: config.priority
         })),
-        available: getAvailableProviders()
+        available: getAvailableProviders(),
+        env_check: {
+            google_key_exists: !!process.env.GOOGLE_VISION_API_KEY,
+            google_key_length: process.env.GOOGLE_VISION_API_KEY ? process.env.GOOGLE_VISION_API_KEY.length : 0
+        }
     };
+    console.log('OCR Status:', JSON.stringify(status, null, 2));
+    return status;
 }
 
 module.exports = {
