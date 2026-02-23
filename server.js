@@ -176,6 +176,20 @@ const XERO_TOOLS = [
                 }
             }
         }
+    },
+    {
+        type: "function",
+        function: {
+            name: "get_invoice_pdf",
+            description: "获取指定发票的 PDF 文件，可以通过发票编号或发票ID获取",
+            parameters: {
+                type: "object",
+                properties: {
+                    invoice_number: { type: "string", description: "发票编号，如 INV-0001（可选，与 invoice_id 二选一）" },
+                    invoice_id: { type: "string", description: "发票ID（可选，与 invoice_number 二选一）" }
+                }
+            }
+        }
     }
 ];
 
@@ -227,6 +241,42 @@ async function executeToolCall(toolCall) {
                 break;
             case 'get_cashflow_forecast':
                 result = await xero.getCashflowForecast(args.days || 30);
+                break;
+            case 'get_invoice_pdf':
+                // 获取发票 PDF
+                if (args.invoice_number) {
+                    const pdfData = await xero.getInvoicePDFByNumber(args.invoice_number);
+                    // 生成下载链接
+                    const baseUrl = process.env.BASE_URL || 'https://xero-invoice-bot-1.onrender.com';
+                    // 需要先获取发票ID
+                    const invoices = await xero.getAllInvoices();
+                    const invoice = invoices.find(inv => inv.InvoiceNumber === args.invoice_number);
+                    if (invoice) {
+                        result = {
+                            success: true,
+                            message: `📄 发票 ${args.invoice_number} 的 PDF 已准备好`,
+                            download_url: `${baseUrl}/xero/invoice/${invoice.InvoiceID}/pdf`,
+                            invoice_number: args.invoice_number,
+                            invoice_id: invoice.InvoiceID,
+                            customer_name: invoice.Contact?.Name,
+                            total: invoice.Total,
+                            status: invoice.Status
+                        };
+                    } else {
+                        result = { error: `找不到发票 ${args.invoice_number}` };
+                    }
+                } else if (args.invoice_id) {
+                    const pdfData = await xero.getInvoicePDF(args.invoice_id);
+                    const baseUrl = process.env.BASE_URL || 'https://xero-invoice-bot-1.onrender.com';
+                    result = {
+                        success: true,
+                        message: `📄 发票 PDF 已准备好`,
+                        download_url: `${baseUrl}/xero/invoice/${args.invoice_id}/pdf`,
+                        invoice_id: args.invoice_id
+                    };
+                } else {
+                    result = { error: '请提供发票编号 (invoice_number) 或发票ID (invoice_id)' };
+                }
                 break;
             default:
                 return { error: `Unknown tool: ${name}` };
@@ -722,6 +772,52 @@ app.get('/xero/callback', async (req, res) => {
             </body>
             </html>
         `);
+    }
+});
+
+// ===============================
+// 获取发票 PDF
+// ===============================
+app.get('/xero/invoice/:invoiceId/pdf', async (req, res) => {
+    try {
+        const { invoiceId } = req.params;
+        logger.info('PDF download request', { invoiceId });
+        
+        const pdfData = await xero.getInvoicePDF(invoiceId);
+        
+        res.setHeader('Content-Type', 'application/pdf');
+        res.setHeader('Content-Disposition', `attachment; filename="${pdfData.filename}"`);
+        res.send(pdfData.pdfBuffer);
+        
+        logger.info('PDF sent successfully', { invoiceId, size: pdfData.pdfBuffer.length });
+    } catch (error) {
+        logger.error('Failed to download PDF', error);
+        
+        if (error.message === 'XERO_NOT_AUTHENTICATED') {
+            return res.status(401).json({ 
+                error: 'Xero 未授权',
+                message: '请先访问 /xero/auth 进行授权'
+            });
+        }
+        
+        if (error.message === 'XERO_NO_TENANT') {
+            return res.status(400).json({ 
+                error: '未找到 Xero 组织',
+                message: '请确保 Xero 账户已连接'
+            });
+        }
+        
+        if (error.message?.includes('INVOICE_NOT_FOUND')) {
+            return res.status(404).json({ 
+                error: '发票不存在',
+                message: error.message 
+            });
+        }
+        
+        res.status(500).json({ 
+            error: '获取 PDF 失败',
+            message: error.message 
+        });
     }
 });
 

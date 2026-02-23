@@ -1032,6 +1032,73 @@ function initXero() {
     console.log('Xero 模块已初始化');
 }
 
+/**
+ * 获取发票 PDF
+ * @param {string} invoiceId - 发票 ID
+ * @returns {Promise<Buffer>} PDF 文件内容
+ */
+async function getInvoicePDF(invoiceId) {
+    logger.info('Getting invoice PDF', { invoiceId });
+    
+    const accessToken = await getValidToken();
+    if (!accessToken) {
+        logger.warn('Cannot get invoice PDF: not authenticated');
+        throw new Error('XERO_NOT_AUTHENTICATED');
+    }
+
+    const tenantId = await getTenantId(accessToken);
+    if (!tenantId) {
+        logger.warn('Cannot get invoice PDF: no tenant found');
+        throw new Error('XERO_NO_TENANT');
+    }
+
+    try {
+        const response = await axios.get(`${XERO_API_BASE}/Invoices/${invoiceId}`, {
+            headers: {
+                'Authorization': `Bearer ${accessToken}`,
+                'Xero-tenant-id': tenantId,
+                'Accept': 'application/pdf'
+            },
+            responseType: 'arraybuffer', // 获取二进制数据
+            timeout: 30000
+        });
+
+        if (response.status === 200) {
+            logger.info('Invoice PDF retrieved successfully', { 
+                invoiceId, 
+                size: response.data.length 
+            });
+            return {
+                pdfBuffer: response.data,
+                contentType: 'application/pdf',
+                filename: `Invoice_${invoiceId}.pdf`
+            };
+        }
+    } catch (error) {
+        logger.error('Failed to get invoice PDF', error);
+        throw handleXeroError(error);
+    }
+}
+
+/**
+ * 通过发票编号获取发票 PDF
+ * @param {string} invoiceNumber - 发票编号（如 INV-0001）
+ * @returns {Promise<Object>} PDF 文件内容
+ */
+async function getInvoicePDFByNumber(invoiceNumber) {
+    logger.info('Getting invoice PDF by number', { invoiceNumber });
+    
+    // 先查询发票获取 ID
+    const invoices = await getAllInvoices();
+    const invoice = invoices.find(inv => inv.InvoiceNumber === invoiceNumber);
+    
+    if (!invoice) {
+        throw new Error(`INVOICE_NOT_FOUND: 找不到发票 ${invoiceNumber}`);
+    }
+    
+    return await getInvoicePDF(invoice.InvoiceID);
+}
+
 module.exports = {
     initXero,
     getValidToken,
@@ -1046,5 +1113,7 @@ module.exports = {
     healthCheck,
     getBASReport,
     getCashflowForecast,
-    checkTokenStatus
+    checkTokenStatus,
+    getInvoicePDF,
+    getInvoicePDFByNumber
 };
