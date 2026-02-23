@@ -6,6 +6,12 @@
 
 const axios = require('axios');
 
+// 模块加载时打印环境变量状态（用于调试）
+console.log('[OCR Module] Environment check on load:');
+console.log('[OCR Module] GOOGLE_VISION_API_KEY exists:', !!process.env.GOOGLE_VISION_API_KEY);
+console.log('[OCR Module] GOOGLE_VISION_API_KEY length:', process.env.GOOGLE_VISION_API_KEY ? process.env.GOOGLE_VISION_API_KEY.length : 0);
+console.log('[OCR Module] BAIDU_OCR_API_KEY exists:', !!process.env.BAIDU_OCR_API_KEY);
+
 // OCR服务商配置（函数形式，每次调用时重新检查环境变量）
 function getOCRProviders() {
     return {
