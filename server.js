@@ -861,6 +861,25 @@ app.get('/health', async (req, res) => {
 });
 
 // ===============================
+// 调试端点（仅用于排查问题）
+// ===============================
+app.get('/debug/env', (req, res) => {
+    res.json({
+        google_vision: {
+            configured: !!process.env.GOOGLE_VISION_API_KEY,
+            key_length: process.env.GOOGLE_VISION_API_KEY ? process.env.GOOGLE_VISION_API_KEY.length : 0,
+            key_preview: process.env.GOOGLE_VISION_API_KEY ? process.env.GOOGLE_VISION_API_KEY.substring(0, 10) + '...' : null
+        },
+        baidu_ocr: {
+            api_key_configured: !!process.env.BAIDU_OCR_API_KEY,
+            secret_key_configured: !!process.env.BAIDU_OCR_SECRET_KEY
+        },
+        node_env: process.env.NODE_ENV,
+        timestamp: new Date().toISOString()
+    });
+});
+
+// ===============================
 // 用户管理 API（多用户支持）
 // ===============================
 
