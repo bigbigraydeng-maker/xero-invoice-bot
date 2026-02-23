@@ -144,45 +144,75 @@ async function refreshAccessToken(refreshToken) {
 
 /**
  * 获取有效的 access token
+ * 增强版：添加详细日志和错误处理
  */
 async function getValidToken() {
     const tokens = loadTokens();
 
     if (!tokens || Object.keys(tokens).length === 0) {
-        logger.warn('No tokens found');
+        logger.warn('No tokens found in storage');
         return null;
     }
 
     const accessToken = tokens.access_token;
     const refreshToken = tokens.refresh_token;
+    const expiresAt = tokens.expires_at;
+    
+    logger.info('Token status check', {
+        hasAccessToken: !!accessToken,
+        hasRefreshToken: !!refreshToken,
+        expiresAt: expiresAt ? new Date(expiresAt).toISOString() : 'unknown',
+        now: new Date().toISOString()
+    });
+
+    // 先检查是否已过期（基于时间）
+    if (expiresAt && Date.now() < expiresAt - 60000) { // 提前1分钟刷新
+        logger.debug('Token not expired based on timestamp, using cached token');
+        return accessToken;
+    }
 
     if (accessToken) {
         // 测试 token 是否有效
         try {
+            logger.debug('Testing access token validity...');
             const response = await axios.get(XERO_CONNECTIONS_URL, {
                 headers: { 'Authorization': `Bearer ${accessToken}` },
-                timeout: 10000 // 10秒超时
+                timeout: 10000
             });
 
             if (response.status === 200) {
-                logger.debug('Access token is valid');
+                logger.info('Access token is valid');
                 return accessToken;
             }
         } catch (error) {
-            logger.info('Access token expired or invalid, trying to refresh...');
+            logger.info('Access token test failed', {
+                error: error.response?.status,
+                message: error.message
+            });
         }
     }
 
     // Token 过期或无效，尝试刷新
     if (refreshToken) {
-        logger.info('Refreshing access token...');
-        const newTokens = await refreshAccessToken(refreshToken);
-        if (newTokens) {
-            return newTokens.access_token;
+        logger.info('Attempting to refresh access token...');
+        try {
+            const newTokens = await refreshAccessToken(refreshToken);
+            if (newTokens && newTokens.access_token) {
+                logger.info('Token refreshed successfully');
+                return newTokens.access_token;
+            }
+        } catch (error) {
+            logger.error('Token refresh failed', error);
+            
+            // 检查是否是 refresh_token 过期
+            if (error.message?.includes('invalid_grant')) {
+                logger.error('Refresh token has expired, need re-authorization');
+                throw new Error('XERO_REFRESH_TOKEN_EXPIRED');
+            }
         }
     }
 
-    logger.error('Failed to get valid token');
+    logger.error('Failed to get valid token, re-authorization required');
     return null;
 }
 
