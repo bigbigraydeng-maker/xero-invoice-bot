@@ -557,7 +557,7 @@ async function handleImageMessage(chatId, userId, content, token) {
         console.log('发票识别结果:', JSON.stringify(invoiceData, null, 2));
 
         // 存储待确认的发票
-        ocr.storePendingInvoice(userId, invoiceData);
+        await ocr.storePendingInvoice(userId, invoiceData);
 
         // 发送识别结果给用户确认
         const formattedInfo = ocr.formatInvoiceInfo(invoiceData);
@@ -616,10 +616,10 @@ async function handleInvoiceConfirmation(chatId, userId, text, pendingInvoice, t
             const xeroInvoice = ocr.convertToXeroInvoice(pendingInvoice);
             
             // 创建发票
-            const result = await xero.createInvoice(xeroInvoice);
+            const result = await xero.createInvoice(userId, xeroInvoice);
             
             // 清除待确认状态
-            ocr.clearPendingInvoice(userId);
+            await ocr.clearPendingInvoice(userId);
 
             await sendFeishuMessage(chatId, 
                 `✅ **发票创建成功！**\n\n` +
@@ -646,7 +646,7 @@ async function handleInvoiceConfirmation(chatId, userId, text, pendingInvoice, t
 
     } else if (lowerText.includes('修改') || lowerText.includes('取消')) {
         // 用户取消或修改
-        ocr.clearPendingInvoice(userId);
+        await ocr.clearPendingInvoice(userId);
         await sendFeishuMessage(chatId, 
             `📝 已取消发票创建。\n\n` +
             `您可以：\n` +
@@ -1070,7 +1070,7 @@ app.post('/feishu-webhook', async (req, res) => {
                     console.log('用户消息:', text);
 
                     // 检查是否有待确认的发票
-                    const pendingInvoice = ocr.getPendingInvoice(userId);
+                    const pendingInvoice = await ocr.getPendingInvoice(userId);
                     if (pendingInvoice) {
                         await handleInvoiceConfirmation(chatId, userId, text, pendingInvoice, token);
                         return;

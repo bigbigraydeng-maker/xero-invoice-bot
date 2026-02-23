@@ -146,24 +146,24 @@ function formatInvoiceInfo(invoice) {
  * 存储待确认的发票
  * 使用 SQLite 持久化存储（替代内存 Map）
  */
-function storePendingInvoice(userId, invoiceData) {
-    return db.storePendingInvoice(userId, invoiceData, 30);
+async function storePendingInvoice(userId, invoiceData) {
+    return await db.storePendingInvoice(userId, invoiceData, 30);
 }
 
 /**
  * 获取待确认的发票
  * 从 SQLite 数据库读取
  */
-function getPendingInvoice(userId) {
-    return db.getPendingInvoice(userId);
+async function getPendingInvoice(userId) {
+    return await db.getPendingInvoice(userId);
 }
 
 /**
  * 清除待确认的发票
  * 从 SQLite 数据库删除
  */
-function clearPendingInvoice(userId) {
-    return db.clearPendingInvoice(userId);
+async function clearPendingInvoice(userId) {
+    return await db.clearPendingInvoice(userId);
 }
 
 /**
