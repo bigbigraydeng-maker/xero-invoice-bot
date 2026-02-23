@@ -1147,9 +1147,6 @@ process.on('unhandledRejection', (reason) => {
     console.error('未处理的 Promise 拒绝:', reason);
 });
 
-// 初始化 Xero 模块
-xero.initXero();
-
 // 启动服务器
 app.listen(PORT, () => {
     console.log(`Bizmate 服务运行在端口 ${PORT}`);
