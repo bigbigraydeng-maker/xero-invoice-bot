@@ -202,8 +202,8 @@ const MAX_HISTORY_LENGTH = 20;
  * @param {string} userId - 用户ID
  * @returns {Array} 消息数组
  */
-function getHistory(userId) {
-    return db.getHistory(userId, MAX_HISTORY_LENGTH);
+async function getHistory(userId) {
+    return await db.getHistory(userId, MAX_HISTORY_LENGTH);
 }
 
 /**
@@ -212,9 +212,9 @@ function getHistory(userId) {
  * @param {string} userMsg - 用户消息
  * @param {string} assistantMsg - 助手回复
  */
-function saveHistory(userId, userMsg, assistantMsg) {
-    db.saveMessage(userId, 'user', userMsg);
-    db.saveMessage(userId, 'assistant', assistantMsg);
+async function saveHistory(userId, userMsg, assistantMsg) {
+    await db.saveMessage(userId, 'user', userMsg);
+    await db.saveMessage(userId, 'assistant', assistantMsg);
 }
 
 // 工具执行器
@@ -347,7 +347,7 @@ async function callKimiAPI(messages) {
 async function processUserMessage(userId, userText) {
     try {
         console.log('开始处理用户消息:', userText.substring(0, 50) + '...');
-        const history = getHistory(userId);
+        const history = await getHistory(userId);
         console.log('历史消息数量:', history.length);
 
         let messages = [
@@ -384,7 +384,7 @@ async function processUserMessage(userId, userText) {
 
         const reply = assistantMessage.content;
         console.log('AI 回复:', reply.substring(0, 100) + '...');
-        saveHistory(userId, userText, reply);
+        await saveHistory(userId, userText, reply);
         return reply;
     } catch (error) {
         console.error('processUserMessage 出错:', error.message);
