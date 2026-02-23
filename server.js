@@ -849,7 +849,7 @@ app.get('/xero/invoice/:invoiceId/pdf', async (req, res) => {
 app.get('/health', async (req, res) => {
     const xeroStatus = await xero.healthCheck();
     const ocrStatus = ocr.getOCRStatus();
-    const dbStats = db.getStats();
+    const dbStats = await db.getStats();
     res.json({
         status: 'running',
         service: 'bizmate',
@@ -865,9 +865,9 @@ app.get('/health', async (req, res) => {
 // ===============================
 
 // 获取所有用户列表
-app.get('/api/users', (req, res) => {
+app.get('/api/users', async (req, res) => {
     try {
-        const users = db.getAllUsers();
+        const users = await db.getAllUsers();
         res.json({
             success: true,
             count: users.length,
@@ -882,9 +882,9 @@ app.get('/api/users', (req, res) => {
 });
 
 // 获取特定用户信息
-app.get('/api/users/:userId', (req, res) => {
+app.get('/api/users/:userId', async (req, res) => {
     try {
-        const user = db.getUser(req.params.userId);
+        const user = await db.getUser(req.params.userId);
         if (!user) {
             return res.status(404).json({
                 success: false,
@@ -893,8 +893,8 @@ app.get('/api/users/:userId', (req, res) => {
         }
         
         // 检查 Xero 连接状态
-        const xeroStatus = xero.isConnected(req.params.userId);
-        const xeroToken = db.getXeroToken(req.params.userId);
+        const xeroStatus = await xero.isConnected(req.params.userId);
+        const xeroToken = await db.getXeroToken(req.params.userId);
         
         res.json({
             success: true,
@@ -914,9 +914,9 @@ app.get('/api/users/:userId', (req, res) => {
 });
 
 // 获取所有已连接 Xero 的用户
-app.get('/api/xero/users', (req, res) => {
+app.get('/api/xero/users', async (req, res) => {
     try {
-        const users = db.getAllXeroUsers();
+        const users = await db.getAllXeroUsers();
         res.json({
             success: true,
             count: users.length,
@@ -931,9 +931,9 @@ app.get('/api/xero/users', (req, res) => {
 });
 
 // 断开用户 Xero 连接
-app.post('/api/users/:userId/xero/disconnect', (req, res) => {
+app.post('/api/users/:userId/xero/disconnect', async (req, res) => {
     try {
-        xero.disconnect(req.params.userId);
+        await xero.disconnect(req.params.userId);
         res.json({
             success: true,
             message: 'Xero connection removed'
@@ -1005,7 +1005,7 @@ app.post('/feishu-webhook', async (req, res) => {
             const feishuUserId = event.sender?.sender_id?.open_id || chatId;
             
             // 创建或更新用户（多用户支持）
-            const userId = db.createOrUpdateUser('feishu', feishuUserId, {
+            const userId = await db.createOrUpdateUser('feishu', feishuUserId, {
                 name: event.sender?.sender_id?.union_id || null
             });
             
