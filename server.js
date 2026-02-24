@@ -602,6 +602,7 @@ async function downloadFeishuImage(imageKey, token, messageId) {
         console.log('API URL:', `https://open.feishu.cn/open-apis/im/v1/messages/${encodedMessageId}/resources/${encodedImageKey}`);
         
         // 使用 resources API 直接获取图片内容
+        // 注意：根据飞书文档，type 参数是必需的，size 参数可选（0: 原图, 1: 大图, 2: 缩略图）
         const imageResponse = await axios.get(
             `https://open.feishu.cn/open-apis/im/v1/messages/${encodedMessageId}/resources/${encodedImageKey}`,
             {
@@ -609,7 +610,8 @@ async function downloadFeishuImage(imageKey, token, messageId) {
                     'Authorization': `Bearer ${token}`
                 },
                 params: {
-                    type: 'image'  // 资源类型：image
+                    type: 'image',  // 资源类型：image
+                    size: 0  // 0: 原图
                 },
                 responseType: 'arraybuffer',  // 直接获取二进制数据
                 timeout: 30000
@@ -959,7 +961,8 @@ app.get('/debug/test-image-download', async (req, res) => {
                     'Authorization': `Bearer ${token}`
                 },
                 params: {
-                    type: 'image'
+                    type: 'image',
+                    size: 0
                 },
                 responseType: 'arraybuffer',
                 timeout: 30000
