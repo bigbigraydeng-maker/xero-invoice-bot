@@ -587,12 +587,16 @@ async function downloadFeishuImage(imageKey, token) {
         console.log('使用 Token (前20位):', token ? token.substring(0, 20) + '...' : 'null');
         
         // 第一步：获取图片下载链接
-        // 使用 images 接口获取图片资源，size 参数直接放在 URL 中
-        const linkResponse = await axios.get(
-            `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}?size=0`,
+        // 根据飞书文档，使用 POST 方法获取图片下载链接
+        const linkResponse = await axios.post(
+            `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}/download`,
+            {
+                size: 0  // 0: 原图, 1: 大图, 2: 缩略图
+            },
             {
                 headers: { 
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json; charset=utf-8'
                 },
                 timeout: 30000
             }
@@ -939,12 +943,16 @@ app.get('/debug/test-image-download', async (req, res) => {
         console.log('Token (前20位):', token.substring(0, 20) + '...');
         
         // 尝试获取图片下载链接
-        // 注意：飞书 API 可能需要在 URL 中直接传递 size 参数
-        const linkResponse = await axios.get(
-            `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}?size=0`,
+        // 根据飞书文档，使用 POST 方法获取图片下载链接
+        const linkResponse = await axios.post(
+            `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}/download`,
+            {
+                size: 0  // 0: 原图, 1: 大图, 2: 缩略图
+            },
             {
                 headers: { 
-                    'Authorization': `Bearer ${token}`
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json; charset=utf-8'
                 },
                 timeout: 30000
             }
