@@ -575,7 +575,14 @@ async function handleImageMessage(chatId, userId, content, token, messageId) {
 
     } catch (error) {
         console.error('处理图片消息失败:', error.message);
-        await sendFeishuMessage(chatId, `❌ 发票识别失败: ${error.message}\n\n请确保：\n1. 图片清晰可读\n2. 是正规发票\n3. 重试或手动输入信息`, token);
+        
+        // 判断是否为非发票图片
+        if (error.message.includes('NOT_AN_INVOICE')) {
+            const reason = error.message.replace('NOT_AN_INVOICE:', '').trim();
+            await sendFeishuMessage(chatId, `⚠️ ${reason}\n\n请上传正规的发票图片，例如：\n• 中国增值税发票\n• 澳洲 Tax Invoice\n• 新西兰 Tax Invoice`, token);
+        } else {
+            await sendFeishuMessage(chatId, `❌ 发票识别失败: ${error.message}\n\n请确保：\n1. 图片清晰可读\n2. 是正规发票\n3. 重试或手动输入信息`, token);
+        }
     }
 }
 

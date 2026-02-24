@@ -50,6 +50,48 @@ function getAvailableProviders() {
 }
 
 /**
+ * 验证识别结果是否为有效发票
+ * @param {object} result - OCR识别结果
+ * @returns {object} { isValid: boolean, reason: string }
+ */
+function validateInvoiceResult(result) {
+    // 检查是否有发票类型
+    if (!result.invoiceType || result.invoiceType === '未知') {
+        return { isValid: false, reason: '无法识别发票类型，请确保上传的是正规发票' };
+    }
+    
+    // 检查关键字段：至少要有发票号码或金额
+    const hasInvoiceNum = result.invoiceNum && result.invoiceNum.trim().length > 0;
+    const hasAmount = result.totalAmount && result.totalAmount > 0;
+    const hasSellerName = result.sellerName && result.sellerName.trim().length > 0;
+    
+    // 中国发票需要发票代码或号码
+    if (result.invoiceRegion === 'CN') {
+        const hasInvoiceCode = result.invoiceCode && result.invoiceCode.trim().length > 0;
+        if (!hasInvoiceNum && !hasInvoiceCode) {
+            return { isValid: false, reason: '无法识别发票代码或号码，请上传清晰的发票图片' };
+        }
+    }
+    // 澳新发票需要卖家名称和金额
+    else if (result.invoiceRegion === 'AU' || result.invoiceRegion === 'NZ') {
+        if (!hasSellerName) {
+            return { isValid: false, reason: '无法识别卖家信息，请上传清晰的Tax Invoice' };
+        }
+        if (!hasAmount) {
+            return { isValid: false, reason: '无法识别发票金额，请上传清晰的Tax Invoice' };
+        }
+    }
+    // 其他类型发票：至少需要号码或金额
+    else {
+        if (!hasInvoiceNum && !hasAmount) {
+            return { isValid: false, reason: '无法识别关键发票信息（发票号码或金额），请上传正规发票' };
+        }
+    }
+    
+    return { isValid: true, reason: '' };
+}
+
+/**
  * 统一发票识别接口
  * @param {string} imageBase64 - base64编码的图片
  * @returns {object} 标准化的发票数据
@@ -69,6 +111,15 @@ async function recognizeInvoice(imageBase64) {
             console.log(`尝试使用 ${providerConfigs[provider].name} 识别发票...`);
             const result = await recognizeWithProvider(provider, imageBase64);
             console.log(`${providerConfigs[provider].name} 识别成功`);
+            
+            // 验证识别结果是否为有效发票
+            const validation = validateInvoiceResult(result);
+            if (!validation.isValid) {
+                console.log(`识别结果验证失败: ${validation.reason}`);
+                throw new Error(`NOT_AN_INVOICE: ${validation.reason}`);
+            }
+            
+            console.log('发票验证通过');
             return result;
         } catch (error) {
             console.error(`${providerConfigs[provider].name} 识别失败:`, error.message);
@@ -76,6 +127,11 @@ async function recognizeInvoice(imageBase64) {
                 provider: providerConfigs[provider].name,
                 error: error.message
             });
+            
+            // 如果是非发票错误，直接抛出，不再尝试其他服务商
+            if (error.message.startsWith('NOT_AN_INVOICE:')) {
+                throw error;
+            }
             
             // 继续尝试下一个服务商
             continue;
