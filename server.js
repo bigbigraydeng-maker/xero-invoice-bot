@@ -532,7 +532,7 @@ async function sendFeishuMessage(chatId, text, token, retryCount = 0) {
 // ===============================
 // 处理图片消息（OCR识别发票）
 // ===============================
-async function handleImageMessage(chatId, userId, content, token) {
+async function handleImageMessage(chatId, userId, content, token, messageId) {
     try {
         // 解析图片内容
         let imageContent;
@@ -550,10 +550,11 @@ async function handleImageMessage(chatId, userId, content, token) {
         }
 
         console.log('获取图片内容, image_key:', imageKey);
+        console.log('消息ID:', messageId);
         await sendFeishuMessage(chatId, '⏳ 正在识别发票内容...', token);
 
         // 从飞书下载图片
-        const imageBase64 = await downloadFeishuImage(imageKey, token);
+        const imageBase64 = await downloadFeishuImage(imageKey, token, messageId);
         if (!imageBase64) {
             await sendFeishuMessage(chatId, '❌ 无法下载图片，请重试', token);
             return;
@@ -581,54 +582,42 @@ async function handleImageMessage(chatId, userId, content, token) {
 // ===============================
 // 从飞书下载图片
 // ===============================
-async function downloadFeishuImage(imageKey, token) {
+async function downloadFeishuImage(imageKey, token, messageId) {
     try {
         console.log('获取飞书图片下载链接:', imageKey);
+        console.log('消息ID:', messageId);
         console.log('使用 Token (前20位):', token ? token.substring(0, 20) + '...' : 'null');
         
-        // 第一步：获取图片下载链接
-        // 根据飞书文档，使用 GET 方法直接获取图片内容
-        // 注意：image_key 需要进行 URL 编码
+        // 根据飞书文档，使用 /im/v1/messages/{message_id}/resources/{file_key} 接口
+        // 注意：image_key 即 file_key
+        if (!messageId) {
+            console.error('缺少 message_id，无法下载图片');
+            return null;
+        }
+        
+        const encodedMessageId = encodeURIComponent(messageId);
         const encodedImageKey = encodeURIComponent(imageKey);
-        const linkResponse = await axios.get(
-            `https://open.feishu.cn/open-apis/im/v1/images/${encodedImageKey}`,
+        
+        console.log('使用飞书 resources API 下载图片...');
+        console.log('API URL:', `https://open.feishu.cn/open-apis/im/v1/messages/${encodedMessageId}/resources/${encodedImageKey}`);
+        
+        // 使用 resources API 直接获取图片内容
+        const imageResponse = await axios.get(
+            `https://open.feishu.cn/open-apis/im/v1/messages/${encodedMessageId}/resources/${encodedImageKey}`,
             {
                 headers: { 
                     'Authorization': `Bearer ${token}`
                 },
                 params: {
-                    size: '0'  // 0: 原图, 1: 大图, 2: 缩略图
+                    type: 'image'  // 资源类型：image
                 },
+                responseType: 'arraybuffer',  // 直接获取二进制数据
                 timeout: 30000
             }
         );
 
-        console.log('图片链接响应状态:', linkResponse.status);
-        console.log('图片链接响应数据:', JSON.stringify(linkResponse.data, null, 2));
-
-        // 检查响应 - 飞书 API 返回的 code 为 0 表示成功
-        if (linkResponse.data?.code !== 0) {
-            console.error('获取图片链接失败:', linkResponse.data?.msg || '未知错误', 'code:', linkResponse.data?.code);
-            return null;
-        }
-
-        // 获取图片下载 URL
-        const imageUrl = linkResponse.data?.data?.image_url;
-        if (!imageUrl) {
-            console.error('未获取到图片下载 URL');
-            return null;
-        }
-
-        console.log('获取到图片下载 URL，开始下载...');
-
-        // 第二步：下载图片内容
-        const imageResponse = await axios.get(imageUrl, {
-            responseType: 'arraybuffer',
-            timeout: 30000,
-            headers: {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-            }
-        });
+        console.log('图片下载响应状态:', imageResponse.status);
+        console.log('图片下载响应头:', JSON.stringify(imageResponse.headers, null, 2));
 
         if (imageResponse.data) {
             // 转换为 base64
@@ -641,6 +630,13 @@ async function downloadFeishuImage(imageKey, token) {
         if (error.response) {
             console.error('HTTP状态:', error.response.status);
             console.error('错误详情:', error.response.data);
+            // 尝试解析错误信息
+            try {
+                const errorText = Buffer.from(error.response.data).toString('utf-8');
+                console.error('错误文本:', errorText);
+            } catch (e) {
+                // 忽略解析错误
+            }
         }
         if (error.code) {
             console.error('错误代码:', error.code);
@@ -930,8 +926,14 @@ app.get('/debug/env', (req, res) => {
 // 测试飞书图片下载
 app.get('/debug/test-image-download', async (req, res) => {
     const imageKey = req.query.image_key;
+    const messageId = req.query.message_id;
+    
     if (!imageKey) {
         return res.status(400).json({ error: '缺少 image_key 参数' });
+    }
+    
+    if (!messageId) {
+        return res.status(400).json({ error: '缺少 message_id 参数（需要从飞书消息中获取）' });
     }
     
     try {
@@ -941,38 +943,52 @@ app.get('/debug/test-image-download', async (req, res) => {
         }
         
         console.log('测试下载图片:', imageKey);
+        console.log('消息ID:', messageId);
         console.log('Token (前20位):', token.substring(0, 20) + '...');
         
-        // 尝试获取图片下载链接
-        // 根据飞书文档，使用 GET 方法直接获取图片内容
-        // 注意：image_key 需要进行 URL 编码
+        // 使用 resources API 下载图片
+        const encodedMessageId = encodeURIComponent(messageId);
         const encodedImageKey = encodeURIComponent(imageKey);
-        const linkResponse = await axios.get(
-            `https://open.feishu.cn/open-apis/im/v1/images/${encodedImageKey}`,
+        
+        console.log('API URL:', `https://open.feishu.cn/open-apis/im/v1/messages/${encodedMessageId}/resources/${encodedImageKey}`);
+        
+        const imageResponse = await axios.get(
+            `https://open.feishu.cn/open-apis/im/v1/messages/${encodedMessageId}/resources/${encodedImageKey}`,
             {
                 headers: { 
                     'Authorization': `Bearer ${token}`
                 },
                 params: {
-                    size: '0'  // 0: 原图, 1: 大图, 2: 缩略图
+                    type: 'image'
                 },
+                responseType: 'arraybuffer',
                 timeout: 30000
             }
         );
         
         res.json({
             success: true,
-            response_status: linkResponse.status,
-            response_data: linkResponse.data,
-            image_url: linkResponse.data?.data?.image_url || null
+            response_status: imageResponse.status,
+            content_type: imageResponse.headers['content-type'],
+            content_length: imageResponse.headers['content-length'],
+            data_size: imageResponse.data?.length || 0
         });
     } catch (error) {
         console.error('测试下载图片失败:', error.message);
+        let errorData = error.response?.data;
+        // 尝试解析二进制错误数据
+        if (errorData && Buffer.isBuffer(errorData)) {
+            try {
+                errorData = Buffer.from(errorData).toString('utf-8');
+            } catch (e) {
+                // 保持原样
+            }
+        }
         res.status(500).json({
             success: false,
             error: error.message,
             response_status: error.response?.status,
-            response_data: error.response?.data,
+            response_data: errorData,
             code: error.code
         });
     }
@@ -1169,7 +1185,7 @@ app.post('/feishu-webhook', async (req, res) => {
                     console.log('消息类型:', messageType, '类型判断:', typeof messageType);
                     if (messageType === 'image') {
                         console.log('📷 收到图片消息，开始OCR识别...');
-                        await handleImageMessage(chatId, userId, content, token);
+                        await handleImageMessage(chatId, userId, content, token, messageId);
                         return;
                     }
 
