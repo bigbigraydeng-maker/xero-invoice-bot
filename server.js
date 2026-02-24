@@ -1041,6 +1041,11 @@ app.post('/feishu-webhook', async (req, res) => {
         console.log('Body type field:', body.type);
         console.log('Has header:', !!body.header);
         console.log('Has event:', !!body.event);
+        
+        // 调试：打印完整 body（用于排查图片消息问题）
+        console.log('=== 完整请求体 ===');
+        console.log(JSON.stringify(body, null, 2));
+        console.log('==================');
 
         // 处理 URL 验证
         if (body.type === 'url_verification' && body.challenge) {
