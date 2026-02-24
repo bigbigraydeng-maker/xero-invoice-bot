@@ -1065,6 +1065,12 @@ app.post('/feishu-webhook', async (req, res) => {
             const messageType = event.message?.message_type;
             const feishuUserId = event.sender?.sender_id?.open_id || chatId;
             
+            // 调试：打印完整的消息结构
+            console.log('=== 飞书消息结构 ===');
+            console.log('event.message:', JSON.stringify(event.message, null, 2));
+            console.log('event.sender:', JSON.stringify(event.sender, null, 2));
+            console.log('===================');
+            
             // 创建或更新用户（多用户支持）
             const userId = await db.createOrUpdateUser('feishu', feishuUserId, {
                 name: event.sender?.sender_id?.union_id || null
@@ -1098,6 +1104,7 @@ app.post('/feishu-webhook', async (req, res) => {
                     }
 
                     // 处理图片消息（OCR识别发票）
+                    console.log('消息类型:', messageType, '类型判断:', typeof messageType);
                     if (messageType === 'image') {
                         console.log('📷 收到图片消息，开始OCR识别...');
                         await handleImageMessage(chatId, userId, content, token);
