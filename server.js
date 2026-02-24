@@ -587,12 +587,15 @@ async function downloadFeishuImage(imageKey, token) {
         console.log('使用 Token (前20位):', token ? token.substring(0, 20) + '...' : 'null');
         
         // 第一步：获取图片下载链接
-        // 使用 resources 接口获取图片资源
+        // 使用 images 接口获取图片资源
         const linkResponse = await axios.get(
-            `https://open.feishu.cn/open-apis/im/v1/resources/${imageKey}?size=0`,
+            `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}`,
             {
                 headers: { 
                     'Authorization': `Bearer ${token}`
+                },
+                params: {
+                    size: 0  // 0: 原图, 1: 大图, 2: 缩略图
                 },
                 timeout: 30000
             }
