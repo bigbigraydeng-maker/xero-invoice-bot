@@ -26,7 +26,7 @@ function getOCRProviders() {
             name: 'Google Cloud Vision',
             enabled: !!process.env.GOOGLE_VISION_API_KEY,
             priority: 2,
-            timeout: 10000,
+            timeout: 30000,  // 增加到30秒
             retryCount: 2
         }
     };
@@ -179,7 +179,10 @@ async function recognizeWithGoogle(imageBase64) {
         throw new Error('Google Vision未配置');
     }
     
+    console.log('[Google Vision] 开始识别，图片大小:', imageBase64.length, '字符');
+    
     try {
+        console.log('[Google Vision] 发送请求到 API...');
         const response = await axios.post(
             `https://vision.googleapis.com/v1/images:annotate?key=${apiKey}`,
             {
@@ -204,16 +207,22 @@ async function recognizeWithGoogle(imageBase64) {
             }
         );
         
+        console.log('[Google Vision] 收到响应，状态:', response.status);
+        
         const result = response.data.responses?.[0];
         
         if (result?.fullTextAnnotation?.text) {
+            console.log('[Google Vision] 识别成功，文本长度:', result.fullTextAnnotation.text.length);
             return normalizeGoogleResult(result);
         } else if (result?.error) {
+            console.error('[Google Vision] API 返回错误:', result.error.message);
             throw new Error(`Google Vision错误: ${result.error.message}`);
         } else {
+            console.error('[Google Vision] 返回空结果');
             throw new Error('Google Vision返回空结果');
         }
     } catch (error) {
+        console.error('[Google Vision] 请求失败:', error.message);
         if (error.response?.data?.error) {
             throw new Error(`Google Vision错误: ${error.response.data.error.message}`);
         }
