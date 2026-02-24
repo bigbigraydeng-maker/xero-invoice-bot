@@ -577,22 +577,50 @@ async function handleImageMessage(chatId, userId, content, token) {
 // ===============================
 async function downloadFeishuImage(imageKey, token) {
     try {
-        console.log('下载飞书图片:', imageKey);
+        console.log('获取飞书图片下载链接:', imageKey);
         
-        // 获取图片下载链接
-        const response = await axios.get(
+        // 第一步：获取图片下载链接
+        const linkResponse = await axios.get(
             `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}`,
             {
-                headers: { 'Authorization': `Bearer ${token}` },
-                responseType: 'arraybuffer',
+                headers: { 
+                    'Authorization': `Bearer ${token}`,
+                    'Content-Type': 'application/json'
+                },
                 timeout: 30000
             }
         );
 
-        if (response.data) {
+        console.log('图片链接响应:', JSON.stringify(linkResponse.data, null, 2));
+
+        // 检查响应
+        if (linkResponse.data?.code !== 0) {
+            console.error('获取图片链接失败:', linkResponse.data?.msg || '未知错误');
+            return null;
+        }
+
+        // 获取图片下载 URL
+        const imageUrl = linkResponse.data?.data?.image_url;
+        if (!imageUrl) {
+            console.error('未获取到图片下载 URL');
+            return null;
+        }
+
+        console.log('获取到图片下载 URL，开始下载...');
+
+        // 第二步：下载图片内容
+        const imageResponse = await axios.get(imageUrl, {
+            responseType: 'arraybuffer',
+            timeout: 30000,
+            headers: {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            }
+        });
+
+        if (imageResponse.data) {
             // 转换为 base64
-            const base64 = Buffer.from(response.data).toString('base64');
-            console.log('图片下载成功，大小:', response.data.length, 'bytes');
+            const base64 = Buffer.from(imageResponse.data).toString('base64');
+            console.log('图片下载成功，大小:', imageResponse.data.length, 'bytes');
             return base64;
         }
     } catch (error) {
