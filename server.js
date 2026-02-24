@@ -587,16 +587,15 @@ async function downloadFeishuImage(imageKey, token) {
         console.log('使用 Token (前20位):', token ? token.substring(0, 20) + '...' : 'null');
         
         // 第一步：获取图片下载链接
-        // 根据飞书文档，使用 POST 方法获取图片下载链接
-        const linkResponse = await axios.post(
-            `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}/download`,
-            {
-                size: 0  // 0: 原图, 1: 大图, 2: 缩略图
-            },
+        // 根据飞书文档，使用 GET 方法直接获取图片内容
+        const linkResponse = await axios.get(
+            `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}`,
             {
                 headers: { 
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json; charset=utf-8'
+                    'Authorization': `Bearer ${token}`
+                },
+                params: {
+                    size: '0'  // 0: 原图, 1: 大图, 2: 缩略图
                 },
                 timeout: 30000
             }
@@ -943,16 +942,15 @@ app.get('/debug/test-image-download', async (req, res) => {
         console.log('Token (前20位):', token.substring(0, 20) + '...');
         
         // 尝试获取图片下载链接
-        // 根据飞书文档，使用 POST 方法获取图片下载链接
-        const linkResponse = await axios.post(
-            `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}/download`,
-            {
-                size: 0  // 0: 原图, 1: 大图, 2: 缩略图
-            },
+        // 根据飞书文档，使用 GET 方法直接获取图片内容
+        const linkResponse = await axios.get(
+            `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}`,
             {
                 headers: { 
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json; charset=utf-8'
+                    'Authorization': `Bearer ${token}`
+                },
+                params: {
+                    size: '0'  // 0: 原图, 1: 大图, 2: 缩略图
                 },
                 timeout: 30000
             }
