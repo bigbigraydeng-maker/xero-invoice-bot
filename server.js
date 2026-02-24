@@ -925,6 +925,54 @@ app.get('/debug/env', (req, res) => {
     });
 });
 
+// 测试飞书图片下载
+app.get('/debug/test-image-download', async (req, res) => {
+    const imageKey = req.query.image_key;
+    if (!imageKey) {
+        return res.status(400).json({ error: '缺少 image_key 参数' });
+    }
+    
+    try {
+        const token = await getFeishuToken();
+        if (!token) {
+            return res.status(500).json({ error: '无法获取飞书 token' });
+        }
+        
+        console.log('测试下载图片:', imageKey);
+        console.log('Token (前20位):', token.substring(0, 20) + '...');
+        
+        // 尝试获取图片下载链接
+        const linkResponse = await axios.get(
+            `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}`,
+            {
+                headers: { 
+                    'Authorization': `Bearer ${token}`
+                },
+                params: {
+                    size: 0
+                },
+                timeout: 30000
+            }
+        );
+        
+        res.json({
+            success: true,
+            response_status: linkResponse.status,
+            response_data: linkResponse.data,
+            image_url: linkResponse.data?.data?.image_url || null
+        });
+    } catch (error) {
+        console.error('测试下载图片失败:', error.message);
+        res.status(500).json({
+            success: false,
+            error: error.message,
+            response_status: error.response?.status,
+            response_data: error.response?.data,
+            code: error.code
+        });
+    }
+});
+
 // ===============================
 // 用户管理 API（多用户支持）
 // ===============================
