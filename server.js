@@ -587,8 +587,9 @@ async function downloadFeishuImage(imageKey, token) {
         console.log('使用 Token (前20位):', token ? token.substring(0, 20) + '...' : 'null');
         
         // 第一步：获取图片下载链接
+        // 注意：需要添加 size 参数，可选值: 0(原始大小), 1(大图), 2(缩略图)
         const linkResponse = await axios.get(
-            `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}`,
+            `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}?size=0`,
             {
                 headers: { 
                     'Authorization': `Bearer ${token}`
@@ -600,9 +601,9 @@ async function downloadFeishuImage(imageKey, token) {
         console.log('图片链接响应状态:', linkResponse.status);
         console.log('图片链接响应数据:', JSON.stringify(linkResponse.data, null, 2));
 
-        // 检查响应
+        // 检查响应 - 飞书 API 返回的 code 为 0 表示成功
         if (linkResponse.data?.code !== 0) {
-            console.error('获取图片链接失败:', linkResponse.data?.msg || '未知错误');
+            console.error('获取图片链接失败:', linkResponse.data?.msg || '未知错误', 'code:', linkResponse.data?.code);
             return null;
         }
 
