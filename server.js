@@ -599,6 +599,10 @@ async function downloadFeishuImage(imageKey, token) {
         console.error('下载飞书图片失败:', error.message);
         if (error.response) {
             console.error('HTTP状态:', error.response.status);
+            console.error('错误详情:', error.response.data);
+        }
+        if (error.code) {
+            console.error('错误代码:', error.code);
         }
     }
     return null;
