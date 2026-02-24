@@ -588,8 +588,10 @@ async function downloadFeishuImage(imageKey, token) {
         
         // 第一步：获取图片下载链接
         // 根据飞书文档，使用 GET 方法直接获取图片内容
+        // 注意：image_key 需要进行 URL 编码
+        const encodedImageKey = encodeURIComponent(imageKey);
         const linkResponse = await axios.get(
-            `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}`,
+            `https://open.feishu.cn/open-apis/im/v1/images/${encodedImageKey}`,
             {
                 headers: { 
                     'Authorization': `Bearer ${token}`
@@ -943,8 +945,10 @@ app.get('/debug/test-image-download', async (req, res) => {
         
         // 尝试获取图片下载链接
         // 根据飞书文档，使用 GET 方法直接获取图片内容
+        // 注意：image_key 需要进行 URL 编码
+        const encodedImageKey = encodeURIComponent(imageKey);
         const linkResponse = await axios.get(
-            `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}`,
+            `https://open.feishu.cn/open-apis/im/v1/images/${encodedImageKey}`,
             {
                 headers: { 
                     'Authorization': `Bearer ${token}`
