@@ -429,21 +429,27 @@ async function getFeishuToken() {
     }
 
     try {
-        console.log('获取飞书 access token...');
-        const response = await axios.post('https://open.feishu.cn/open-apis/auth/v3/app_access_token/internal', {
+        console.log('获取飞书 tenant access token...');
+        // 使用 tenant_access_token 接口，这是下载图片等操作需要的
+        const response = await axios.post('https://open.feishu.cn/open-apis/auth/v3/tenant_access_token/internal', {
             app_id: FEISHU_APP_ID,
             app_secret: FEISHU_APP_SECRET
         });
 
-        if (response.data && response.data.app_access_token) {
-            cachedFeishuToken = response.data.app_access_token;
+        if (response.data && response.data.tenant_access_token) {
+            cachedFeishuToken = response.data.tenant_access_token;
             // token 有效期通常是 2 小时，这里设置 1.5 小时后过期
             tokenExpiry = Date.now() + (90 * 60 * 1000);
-            console.log('飞书 token 获取成功');
+            console.log('飞书 tenant token 获取成功');
             return cachedFeishuToken;
+        } else {
+            console.error('获取 tenant token 失败，响应:', response.data);
         }
     } catch (error) {
         console.error('获取飞书 token 失败:', error.message);
+        if (error.response) {
+            console.error('错误响应:', error.response.data);
+        }
     }
     return null;
 }
@@ -578,20 +584,21 @@ async function handleImageMessage(chatId, userId, content, token) {
 async function downloadFeishuImage(imageKey, token) {
     try {
         console.log('获取飞书图片下载链接:', imageKey);
+        console.log('使用 Token (前20位):', token ? token.substring(0, 20) + '...' : 'null');
         
         // 第一步：获取图片下载链接
         const linkResponse = await axios.get(
             `https://open.feishu.cn/open-apis/im/v1/images/${imageKey}`,
             {
                 headers: { 
-                    'Authorization': `Bearer ${token}`,
-                    'Content-Type': 'application/json'
+                    'Authorization': `Bearer ${token}`
                 },
                 timeout: 30000
             }
         );
 
-        console.log('图片链接响应:', JSON.stringify(linkResponse.data, null, 2));
+        console.log('图片链接响应状态:', linkResponse.status);
+        console.log('图片链接响应数据:', JSON.stringify(linkResponse.data, null, 2));
 
         // 检查响应
         if (linkResponse.data?.code !== 0) {
