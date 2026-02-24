@@ -197,7 +197,8 @@ async function recognizeWithGoogle(imageBase64) {
             },
             {
                 headers: {
-                    'Content-Type': 'application/json'
+                    'Content-Type': 'application/json',
+                    'Referer': 'https://xero-invoice-bot-1.onrender.com'
                 },
                 timeout: providers.google.timeout
             }
